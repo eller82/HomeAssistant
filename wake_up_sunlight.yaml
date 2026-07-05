@@ -1,0 +1,160 @@
+blueprint:
+  name: Sonnenaufgang Wecklicht (Hue)
+  description: >
+    Simuliert zu einer festgelegten Zeit einen Sonnenaufgang mit einer Philips Hue
+    Lampe: Helligkeit und Farbtemperatur steigen schrittweise an. Vor dem Start
+    wird optional ein Workday-Sensor (z.B. binary_sensor.workday_sensor) und ein
+    zweiter Sensor (z.B. ein Urlaubsmodus-Schalter) geprüft. Nach einer
+    einstellbaren Zeit schaltet sich das Licht automatisch wieder aus.
+  domain: automation
+  input:
+    light_target:
+      name: Licht
+      description: Die Hue-Lampe(n), die den Sonnenaufgang simulieren sollen.
+      selector:
+        target:
+          entity:
+            domain: light
+
+    start_time:
+      name: Startzeit
+      description: Uhrzeit, zu der der Sonnenaufgang beginnen soll.
+      selector:
+        time:
+
+    use_workday_check:
+      name: Workday-Sensor prüfen?
+      default: true
+      selector:
+        boolean:
+
+    workday_sensor:
+      name: Workday Sensor
+      description: z.B. binary_sensor.workday_sensor (Zustand "on" = Arbeitstag)
+      default: ""
+      selector:
+        entity:
+          domain: binary_sensor
+
+    use_vacation_check:
+      name: Zusätzlichen Sensor prüfen? (z.B. Urlaubsmodus)
+      default: false
+      selector:
+        boolean:
+
+    vacation_sensor:
+      name: Zusätzlicher Sensor
+      description: z.B. input_boolean.urlaubsmodus
+      default: ""
+      selector:
+        entity:
+
+    vacation_sensor_blocking_state:
+      name: Blockierender Zustand des zusätzlichen Sensors
+      description: Wenn der Sensor diesen Zustand hat, wird die Automation NICHT ausgelöst.
+      default: "on"
+      selector:
+        text:
+
+    sunrise_duration:
+      name: Dauer des Sonnenaufgangs (Minuten)
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 90
+          unit_of_measurement: min
+
+    steps:
+      name: Anzahl der Dimm-Schritte
+      default: 10
+      selector:
+        number:
+          min: 2
+          max: 30
+
+    max_brightness:
+      name: Ziel-Helligkeit (%)
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    color_temp_start:
+      name: Start-Farbtemperatur (Mired, warm/rötlich = hoher Wert)
+      default: 500
+      selector:
+        number:
+          min: 153
+          max: 500
+
+    color_temp_end:
+      name: End-Farbtemperatur (Mired, neutral/kalt = niedriger Wert)
+      default: 300
+      selector:
+        number:
+          min: 153
+          max: 500
+
+    turn_off_after:
+      name: Licht nach X Minuten wieder ausschalten
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: min
+
+trigger:
+  - platform: time
+    at: !input start_time
+
+variables:
+  use_workday_check: !input use_workday_check
+  workday_sensor: !input workday_sensor
+  use_vacation_check: !input use_vacation_check
+  vacation_sensor: !input vacation_sensor
+  vacation_sensor_blocking_state: !input vacation_sensor_blocking_state
+  steps_var: !input steps
+  duration_var: !input sunrise_duration
+  max_bright: !input max_brightness
+  ct_start: !input color_temp_start
+  ct_end: !input color_temp_end
+
+condition:
+  - condition: template
+    value_template: >
+      {{ not use_workday_check or (workday_sensor != '' and is_state(workday_sensor, 'on')) }}
+  - condition: template
+    value_template: >
+      {{ not use_vacation_check or (vacation_sensor != '' and not is_state(vacation_sensor, vacation_sensor_blocking_state)) }}
+
+action:
+  - variables:
+      step_delay: "{{ (duration_var * 60 / steps_var) | round(0) }}"
+
+  - repeat:
+      count: !input steps
+      sequence:
+        - variables:
+            current_step: "{{ repeat.index }}"
+            brightness_pct: "{{ (max_bright * current_step / steps_var) | round(0) }}"
+            color_temp: "{{ (ct_start - (ct_start - ct_end) * current_step / steps_var) | round(0) }}"
+        - service: light.turn_on
+          target: !input light_target
+          data:
+            brightness_pct: "{{ brightness_pct }}"
+            color_temp: "{{ color_temp }}"
+            transition: "{{ step_delay }}"
+        - delay:
+            seconds: "{{ step_delay }}"
+
+  - delay:
+      minutes: !input turn_off_after
+
+  - service: light.turn_off
+    target: !input light_target
+
+mode: single
