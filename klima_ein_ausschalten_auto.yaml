@@ -1,0 +1,145 @@
+blueprint:
+  name: Klimaanlage - Solar-Automatik
+  description: >
+    Schaltet eine Klimaanlage ein, wenn Batterie, PV-Erzeugung und
+    Raumtemperatur passen, und wieder aus, sobald eine Bedingung wegfällt
+    (außer bei manuellem Einschalten oder aktivem Urlaubsmodus).
+  domain: automation
+  input:
+    climate_entity:
+      name: Klimaanlage
+      selector:
+        entity:
+          domain: climate
+    room_temp_sensor:
+      name: Raumtemperatur-Sensor
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+    room_temp_threshold:
+      name: Temperatur-Schwellwert (°C)
+      default: 25
+      selector:
+        number:
+          min: 15
+          max: 35
+          step: 0.5
+          unit_of_measurement: "°C"
+    manual_helper:
+      name: "Helper: Manuell eingeschaltet"
+      selector:
+        entity:
+          domain: input_boolean
+    battery_sensor:
+      name: Batterie SOC Sensor
+      default: sensor.BYD_BATTERIE_SOC
+      selector:
+        entity:
+          domain: sensor
+    battery_threshold:
+      name: Batterie-Schwellwert (%)
+      default: 98
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+    pv_sensor:
+      name: PV-Erzeugung Sensor
+      default: sensor.PV_ERZEUGUNG
+      selector:
+        entity:
+          domain: sensor
+    pv_threshold:
+      name: PV-Schwellwert (W)
+      default: 600
+      selector:
+        number:
+          min: 0
+          max: 20000
+          step: 50
+    urlaub_helper:
+      name: Urlaubsmodus-Helper
+      default: input_boolean.urlaubsmodus
+      selector:
+        entity:
+          domain: input_boolean
+    wartezeit:
+      name: Mindestlaufzeit
+      default: "00:10:00"
+      selector:
+        text: {}
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input battery_sensor
+    above: !input battery_threshold
+    for: !input wartezeit
+    id: einschalten
+  - platform: numeric_state
+    entity_id: !input pv_sensor
+    above: !input pv_threshold
+    for: !input wartezeit
+    id: einschalten
+  - platform: numeric_state
+    entity_id: !input room_temp_sensor
+    above: !input room_temp_threshold
+    for: !input wartezeit
+    id: einschalten
+  - platform: numeric_state
+    entity_id: !input battery_sensor
+    below: !input battery_threshold
+    for: !input wartezeit
+    id: ausschalten
+  - platform: numeric_state
+    entity_id: !input pv_sensor
+    below: !input pv_threshold
+    for: !input wartezeit
+    id: ausschalten
+  - platform: numeric_state
+    entity_id: !input room_temp_sensor
+    below: !input room_temp_threshold
+    for: !input wartezeit
+    id: ausschalten
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: einschalten
+          - condition: numeric_state
+            entity_id: !input battery_sensor
+            above: !input battery_threshold
+          - condition: numeric_state
+            entity_id: !input pv_sensor
+            above: !input pv_threshold
+          - condition: numeric_state
+            entity_id: !input room_temp_sensor
+            above: !input room_temp_threshold
+          - condition: state
+            entity_id: !input climate_entity
+            state: "off"
+          - condition: state
+            entity_id: !input urlaub_helper
+            state: "off"
+        sequence:
+          - service: climate.turn_on
+            target:
+              entity_id: !input climate_entity
+      - conditions:
+          - condition: trigger
+            id: ausschalten
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: !input climate_entity
+                state: "off"
+          - condition: state
+            entity_id: !input manual_helper
+            state: "off"
+        sequence:
+          - service: climate.turn_off
+            target:
+              entity_id: !input climate_entity
+mode: single
