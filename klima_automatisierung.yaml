@@ -1,0 +1,42 @@
+blueprint:
+  name: Klimaanlage - Manuell erkennen
+  description: >
+    Setzt einen Helper auf "an", wenn die Klimaanlage außerhalb einer
+    HA-Automation eingeschaltet wurde (App/Fernbedienung/UI-Klick).
+    Setzt ihn zurück auf "aus", sobald die Klimaanlage ausgeht.
+  domain: automation
+  input:
+    climate_entity:
+      name: Klimaanlage
+      selector:
+        entity:
+          domain: climate
+    manual_helper:
+      name: "Helper: Manuell eingeschaltet"
+      selector:
+        entity:
+          domain: input_boolean
+
+trigger:
+  - platform: state
+    entity_id: !input climate_entity
+    id: klima_change
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.from_state.state == 'off' and trigger.to_state.state != 'off' and trigger.to_state.context.parent_id is none }}
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: !input manual_helper
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.state == 'off' }}"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input manual_helper
+mode: single
