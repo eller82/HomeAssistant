@@ -1,9 +1,9 @@
 blueprint:
   name: Sonos Weckradio mit sanfter Lautstärkesteigerung
   description: >
-    Spielt zu einer festgelegten Uhrzeit einen Sonos-Favoriten (z. B. einen
-    Radiosender) auf einem ausgewählten Sonos-Lautsprecher ab und erhöht die
-    Lautstärke danach schrittweise von einem Start- zu einem Zielwert.
+    Spielt zu einer festgelegten Uhrzeit einen Internetradio-Stream auf einem
+    ausgewählten Sonos-Lautsprecher ab und erhöht die Lautstärke danach
+    schrittweise von einem Start- zu einem Zielwert.
   domain: automation
   source_url: https://claude.ai
   input:
@@ -15,12 +15,16 @@ blueprint:
           entity:
             domain: media_player
 
-    favorite_source:
-      name: Sonos Favorit / Radiosender
+    stream_url:
+      name: Stream-URL des Radiosenders
       description: >
-        Der exakte Name des Sonos-Favoriten, so wie in der Sonos-App
-        gespeichert (z. B. "Bayern 3"). Zu finden über Entwicklerwerkzeuge →
-        Zustände → media_player.<dein_lautsprecher> → Attribut "source_list".
+        Die direkte https-Stream-Adresse des Senders, OHNE das
+        "x-rincon-mp3radio://"-Präfix (z. B.
+        https://s6-webradio.antenne.de/antenne/stream/mp3?aw_0_1st.playerid=tunein.com).
+        Zu finden, indem man den Sender einmal über den Medien-Browser
+        abspielt und danach bei Entwicklerwerkzeuge → Zustände →
+        media_player.<dein_lautsprecher> das Attribut "media_content_id"
+        abliest.
       selector:
         text:
 
@@ -101,6 +105,7 @@ variables:
   end_volume: !input end_volume
   fade_duration: !input fade_duration
   step_interval: !input step_interval
+  stream_url: !input stream_url
   total_steps: "{{ (fade_duration | int * 60 / (step_interval | int)) | round(0, 'ceil') | int }}"
 
 trigger:
@@ -112,18 +117,22 @@ condition:
     weekday: !input weekdays
 
 action:
+  - service: media_player.media_stop
+    target: !input sonos_speaker
+
+  - delay:
+      seconds: 2
+
   - service: media_player.volume_set
     target: !input sonos_speaker
     data:
       volume_level: "{{ (start_volume | int) / 100 }}"
 
-  - service: media_player.select_source
+  - service: media_player.play_media
     target: !input sonos_speaker
     data:
-      source: !input favorite_source
-
-  - service: media_player.media_play
-    target: !input sonos_speaker
+      media_content_id: "x-rincon-mp3radio://{{ stream_url }}"
+      media_content_type: music
 
   - repeat:
       count: "{{ total_steps }}"
