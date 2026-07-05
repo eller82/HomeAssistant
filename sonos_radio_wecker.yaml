@@ -1,0 +1,140 @@
+blueprint:
+  name: Sonos Weckradio mit sanfter Lautstärkesteigerung
+  description: >
+    Spielt zu einer festgelegten Uhrzeit einen Sonos-Favoriten (z. B. einen
+    Radiosender) auf einem ausgewählten Sonos-Lautsprecher ab und erhöht die
+    Lautstärke danach schrittweise von einem Start- zu einem Zielwert.
+  domain: automation
+  source_url: https://claude.ai
+  input:
+    sonos_speaker:
+      name: Sonos Lautsprecher
+      description: Der Lautsprecher, auf dem der Radiosender abgespielt werden soll.
+      selector:
+        target:
+          entity:
+            domain: media_player
+
+    favorite_source:
+      name: Sonos Favorit / Radiosender
+      description: >
+        Der exakte Name des Sonos-Favoriten, so wie in der Sonos-App
+        gespeichert (z. B. "Bayern 3"). Zu finden über Entwicklerwerkzeuge →
+        Zustände → media_player.<dein_lautsprecher> → Attribut "source_list".
+      selector:
+        text:
+
+    alarm_time:
+      name: Uhrzeit
+      description: Zu welcher Uhrzeit die Automatisierung starten soll.
+      selector:
+        time:
+
+    weekdays:
+      name: Wochentage
+      description: An welchen Tagen die Automatisierung aktiv sein soll.
+      default: [mon, tue, wed, thu, fri, sat, sun]
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Montag
+              value: mon
+            - label: Dienstag
+              value: tue
+            - label: Mittwoch
+              value: wed
+            - label: Donnerstag
+              value: thu
+            - label: Freitag
+              value: fri
+            - label: Samstag
+              value: sat
+            - label: Sonntag
+              value: sun
+
+    start_volume:
+      name: Start-Lautstärke (%)
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+    end_volume:
+      name: Ziel-Lautstärke (%)
+      default: 40
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+    fade_duration:
+      name: Dauer der Steigerung (Minuten)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+          mode: slider
+
+    step_interval:
+      name: Schrittintervall (Sekunden)
+      description: >
+        In welchen Abständen die Lautstärke erhöht wird. Kleinere Werte
+        ergeben eine weichere, feinere Steigerung.
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 120
+          unit_of_measurement: s
+          mode: slider
+
+variables:
+  start_volume: !input start_volume
+  end_volume: !input end_volume
+  fade_duration: !input fade_duration
+  step_interval: !input step_interval
+  total_steps: "{{ (fade_duration | int * 60 / (step_interval | int)) | round(0, 'ceil') | int }}"
+
+trigger:
+  - platform: time
+    at: !input alarm_time
+
+condition:
+  - condition: time
+    weekday: !input weekdays
+
+action:
+  - service: media_player.volume_set
+    target: !input sonos_speaker
+    data:
+      volume_level: "{{ (start_volume | int) / 100 }}"
+
+  - service: media_player.select_source
+    target: !input sonos_speaker
+    data:
+      source: !input favorite_source
+
+  - service: media_player.media_play
+    target: !input sonos_speaker
+
+  - repeat:
+      count: "{{ total_steps }}"
+      sequence:
+        - delay:
+            seconds: "{{ step_interval | int }}"
+        - service: media_player.volume_set
+          target: !input sonos_speaker
+          data:
+            volume_level: >
+              {{ [ ((start_volume | int) + ((end_volume | int) - (start_volume | int)) * repeat.index / total_steps) / 100, (end_volume | int) / 100 ] | min }}
+
+mode: single
+max_exceeded: silent
