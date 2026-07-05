@@ -2,8 +2,10 @@ blueprint:
   name: Klimaanlage - Solar-Automatik
   description: >
     Schaltet eine Klimaanlage ein, wenn Batterie, PV-Erzeugung und
-    Raumtemperatur passen, und wieder aus, sobald eine Bedingung wegfällt
-    (außer bei manuellem Einschalten oder aktivem Urlaubsmodus).
+    Raumtemperatur passen, und wieder aus, sobald Batterie oder PV
+    nicht mehr ausreichen (außer bei manuellem Einschalten oder
+    aktivem Urlaubsmodus). Die Raumtemperatur wird beim Ausschalten
+    NICHT berücksichtigt, da die Klimaanlage diese selbst regelt.
   domain: automation
   input:
     climate_entity:
@@ -95,11 +97,6 @@ trigger:
   - platform: numeric_state
     entity_id: !input pv_sensor
     below: !input pv_threshold
-    for: !input wartezeit
-    id: ausschalten
-  - platform: numeric_state
-    entity_id: !input room_temp_sensor
-    below: !input room_temp_threshold
     for: !input wartezeit
     id: ausschalten
 
