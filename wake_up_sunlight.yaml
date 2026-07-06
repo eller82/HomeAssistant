@@ -141,12 +141,13 @@ action:
         - variables:
             current_step: "{{ repeat.index }}"
             brightness_pct: "{{ (max_bright * current_step / steps_var) | round(0) }}"
-            color_temp: "{{ (ct_start - (ct_start - ct_end) * current_step / steps_var) | round(0) }}"
+            color_temp_mired: "{{ (ct_start - (ct_start - ct_end) * current_step / steps_var) | round(0) }}"
+            color_temp_kelvin: "{{ (1000000 / color_temp_mired) | round(0) }}"
         - service: light.turn_on
           target: !input light_target
           data:
             brightness_pct: "{{ brightness_pct }}"
-            color_temp: "{{ color_temp }}"
+            color_temp_kelvin: "{{ color_temp_kelvin }}"
             transition: "{{ step_delay }}"
         - delay:
             seconds: "{{ step_delay }}"
