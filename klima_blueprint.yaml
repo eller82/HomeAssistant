@@ -1,5 +1,5 @@
 blueprint:
-  name: Klima Solar-Automatik (SOC/PV-gesteuert)
+  name: Klima Solar-Automatik
   description: >
     Schaltet ein Klimagerät automatisch ein bzw. aus, abhängig vom
     Akku-Ladezustand und der PV-Einspeisung. Zusätzlich wird die Klima
