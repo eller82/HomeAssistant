@@ -1,0 +1,302 @@
+blueprint:
+  name: Klima Solar-Automatik (SOC/PV-gesteuert)
+  description: >
+    Schaltet ein Klimagerät automatisch ein bzw. aus, abhängig vom
+    Akku-Ladezustand und der PV-Einspeisung. Zusätzlich wird die Klima
+    kurz aus- und wieder eingeschaltet, wenn die Raumtemperatur seit
+    mindestens X Minuten durchgehend X° über der Zieltemperatur liegt
+    (Neustart bei "hängengebliebenem" Gerät).
+
+    Voraussetzung: Lege vorab zwei Helfer an (Einstellungen > Geräte &
+    Dienste > Helfer):
+      - input_number "Zieltemperatur <Raum>" (min 16, max 30, step 0.5)
+      - input_boolean "Klimaautomatik <Raum> aktiv"
+    Optional zusätzlich:
+      - input_boolean "Klima <Raum> manuell an" (blockiert Auto-Aus)
+      - input_boolean "Urlaubsmodus" (kann global für mehrere Räume
+        genutzt werden)
+    Diese Helfer kannst du dann per Dashboard-Karte (z. B. "Entities")
+    bedienen, ohne die Automatisierung selbst anfassen zu müssen.
+  domain: automation
+  source_url: null
+  input:
+    climate_entity:
+      name: Klimagerät
+      selector:
+        entity:
+          domain: climate
+
+    target_temperature_helper:
+      name: Zieltemperatur (Helfer)
+      description: input_number-Helfer, der die gewünschte Solltemperatur enthält.
+      selector:
+        entity:
+          domain: input_number
+
+    enable_helper:
+      name: Automatisierung aktiv (Helfer)
+      description: >
+        input_boolean-Helfer. Nur wenn dieser "an" ist, greift die
+        komplette Automatik (Ein-/Ausschalten und Neustart-Check).
+      selector:
+        entity:
+          domain: input_boolean
+
+    manual_override_helper:
+      name: Manueller Override (Helfer)
+      description: >
+        input_boolean-Helfer. Wenn "an", wird das Gerät nicht
+        automatisch ausgeschaltet oder neugestartet (manuelle Nutzung
+        hat Vorrang).
+      selector:
+        entity:
+          domain: input_boolean
+
+    status_helper:
+      name: Status-Helfer (optional)
+      description: >
+        input_boolean-Helfer, der von der Automatik selbst gesetzt
+        wird, um auf dem Dashboard anzuzeigen, dass die Automatik
+        gerade eingeschaltet hat. Kann auf einen beliebigen
+        input_boolean gesetzt werden.
+      default: input_boolean.klima_schlafzimmer_automatik
+      selector:
+        entity:
+          domain: input_boolean
+
+    vacation_mode_helper:
+      name: Urlaubsmodus (Helfer)
+      default: input_boolean.urlaubsmodus
+      selector:
+        entity:
+          domain: input_boolean
+
+    room_temperature_sensor:
+      name: Raumtemperatur-Sensor
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    battery_soc_sensor:
+      name: Akku-Ladezustand-Sensor
+      default: sensor.byd_battery_box_premium_hv_ladezustand
+      selector:
+        entity:
+          domain: sensor
+
+    battery_soc_threshold:
+      name: Akku-Ladezustand-Schwelle (%)
+      description: Oberhalb → Einschalten erlaubt, unterhalb → Ausschalten.
+      default: 98
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: box
+
+    pv_feedin_sensor:
+      name: PV-Einspeisung-Sensor
+      default: sensor.solarnet_leistung_netzeinspeisung
+      selector:
+        entity:
+          domain: sensor
+
+    pv_feedin_threshold:
+      name: PV-Einspeisung-Schwelle (W)
+      description: Oberhalb → Einschalten erlaubt, unterhalb → Ausschalten.
+      default: 600
+      selector:
+        number:
+          min: 0
+          max: 20000
+          unit_of_measurement: "W"
+          mode: box
+
+    on_for:
+      name: Mindestdauer über Schwelle (Einschalten)
+      default:
+        hours: 0
+        minutes: 5
+        seconds: 0
+      selector:
+        duration: {}
+
+    off_for:
+      name: Mindestdauer unter Schwelle (Ausschalten)
+      default:
+        hours: 0
+        minutes: 15
+        seconds: 0
+      selector:
+        duration: {}
+
+    overtemp_offset:
+      name: Übertemperatur-Schwelle (°)
+      description: >
+        Wie viel Grad die Raumtemperatur über der Zieltemperatur liegen
+        muss, damit ein Neustart ausgelöst wird.
+      default: 2
+      selector:
+        number:
+          min: 0.5
+          max: 10
+          step: 0.5
+          unit_of_measurement: "°"
+          mode: box
+
+    overtemp_for:
+      name: Mindestdauer Übertemperatur
+      description: >
+        Wie lange die Temperatur durchgehend über der Schwelle liegen
+        muss, bevor die Klima neugestartet wird.
+      default:
+        hours: 0
+        minutes: 10
+        seconds: 0
+      selector:
+        duration: {}
+
+    restart_pause:
+      name: Pause beim Neustart
+      description: Wartezeit zwischen Aus- und wieder Einschalten.
+      default:
+        hours: 0
+        minutes: 0
+        seconds: 10
+      selector:
+        duration: {}
+
+    target_hvac_mode:
+      name: HVAC-Modus beim Einschalten
+      default: auto
+      selector:
+        select:
+          options:
+            - auto
+            - heat
+            - cool
+            - heat_cool
+            - dry
+            - fan_only
+
+variables:
+  target_temperature_helper: !input target_temperature_helper
+  enable_helper: !input enable_helper
+  manual_override_helper: !input manual_override_helper
+  status_helper: !input status_helper
+  vacation_mode_helper: !input vacation_mode_helper
+  climate_entity: !input climate_entity
+  target_hvac_mode: !input target_hvac_mode
+
+triggers:
+  - id: soc_on
+    trigger: numeric_state
+    entity_id: !input battery_soc_sensor
+    above: !input battery_soc_threshold
+    for: !input on_for
+  - id: pv_on
+    trigger: numeric_state
+    entity_id: !input pv_feedin_sensor
+    above: !input pv_feedin_threshold
+    for: !input on_for
+  - id: soc_off
+    trigger: numeric_state
+    entity_id: !input battery_soc_sensor
+    below: !input battery_soc_threshold
+    for: !input off_for
+  - id: pv_off
+    trigger: numeric_state
+    entity_id: !input pv_feedin_sensor
+    below: !input pv_feedin_threshold
+    for: !input off_for
+  - id: overtemp_restart
+    trigger: numeric_state
+    entity_id: !input room_temperature_sensor
+    above: "{{ (states(target_temperature_helper) | float(0)) + (overtemp_offset | float(0)) }}"
+    for: !input overtemp_for
+
+conditions: []
+
+actions:
+  - variables:
+      overtemp_offset: !input overtemp_offset
+  - choose:
+      # --- Einschalten (SOC oder PV über Schwelle) ---
+      - conditions:
+          - condition: trigger
+            id: [soc_on, pv_on]
+          - condition: state
+            entity_id: !input enable_helper
+            state: "on"
+          - condition: state
+            entity_id: !input vacation_mode_helper
+            state: "off"
+          - condition: numeric_state
+            entity_id: !input room_temperature_sensor
+            above: !input target_temperature_helper
+          - condition: state
+            entity_id: !input climate_entity
+            state: "off"
+        sequence:
+          - action: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: "{{ states(target_temperature_helper) | float }}"
+              hvac_mode: "{{ target_hvac_mode }}"
+          - action: climate.turn_on
+            target:
+              entity_id: !input climate_entity
+          - action: input_boolean.turn_on
+            target:
+              entity_id: !input status_helper
+
+      # --- Ausschalten (SOC oder PV unter Schwelle) ---
+      - conditions:
+          - condition: trigger
+            id: [soc_off, pv_off]
+          - condition: state
+            entity_id: !input enable_helper
+            state: "on"
+          - condition: state
+            entity_id: !input manual_override_helper
+            state: "off"
+        sequence:
+          - action: climate.turn_off
+            target:
+              entity_id: !input climate_entity
+          - action: input_boolean.turn_off
+            target:
+              entity_id: !input status_helper
+
+      # --- Neustart bei anhaltender Übertemperatur ---
+      - conditions:
+          - condition: trigger
+            id: [overtemp_restart]
+          - condition: state
+            entity_id: !input enable_helper
+            state: "on"
+          - condition: state
+            entity_id: !input manual_override_helper
+            state: "off"
+          - condition: state
+            entity_id: !input climate_entity
+            state: "on"
+        sequence:
+          - action: climate.turn_off
+            target:
+              entity_id: !input climate_entity
+          - delay: !input restart_pause
+          - action: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: "{{ states(target_temperature_helper) | float }}"
+              hvac_mode: "{{ target_hvac_mode }}"
+          - action: climate.turn_on
+            target:
+              entity_id: !input climate_entity
+
+mode: single
