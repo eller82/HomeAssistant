@@ -131,17 +131,16 @@ blueprint:
       selector:
         duration: {}
 
-    start_offset:
-      name: Einschalt-Schwelle (° über Zieltemperatur)
+    start_temperature:
+      name: Starttemperatur
       description: >
-        Wie viele Grad die Raumtemperatur über der Zieltemperatur
-        liegen muss, damit die Automatik überhaupt einschaltet
-        (0 = schaltet schon bei minimaler Überschreitung ein).
-      default: 0
+        Die Automatik schaltet nur ein, wenn die Raumtemperatur über
+        diesem Wert liegt (unabhängig von der Zieltemperatur).
+      default: 23
       selector:
         number:
-          min: 0
-          max: 5
+          min: 15
+          max: 35
           step: 0.5
           unit_of_measurement: "°"
           mode: box
@@ -204,7 +203,7 @@ variables:
   climate_entity: !input climate_entity
   target_hvac_mode: !input target_hvac_mode
   room_temperature_sensor: !input room_temperature_sensor
-  start_offset: !input start_offset
+  start_temperature: !input start_temperature
 
 trigger_variables:
   room_temperature_sensor: !input room_temperature_sensor
@@ -256,11 +255,9 @@ actions:
           - condition: state
             entity_id: !input vacation_mode_helper
             state: "off"
-          - condition: template
-            value_template: >
-              {{ (states(room_temperature_sensor) | float(0))
-                 - (states(target_temperature_helper) | float(0))
-                 >= (start_offset | float(0)) }}
+          - condition: numeric_state
+            entity_id: !input room_temperature_sensor
+            above: !input start_temperature
           - condition: state
             entity_id: !input climate_entity
             state: "off"
