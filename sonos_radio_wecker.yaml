@@ -1,149 +1,108 @@
 blueprint:
-  name: Sonos Weckradio mit sanfter Lautstärkesteigerung
+  name: Sonos Wecker (Zeitplan + Einmalig)
   description: >
-    Spielt zu einer festgelegten Uhrzeit einen Internetradio-Stream auf einem
-    ausgewählten Sonos-Lautsprecher ab und erhöht die Lautstärke danach
-    schrittweise von einem Start- zu einem Zielwert.
+    Spielt einen Radiosender auf einem Sonos-Lautsprecher ab, entweder gesteuert
+    über einen Schedule-Helper (wiederkehrender Wochenplan) oder über eine
+    einmalige Uhrzeit. Beide Wege lassen sich separat per Schalter aktivieren/
+    deaktivieren. Der einmalige Wecker deaktiviert sich nach dem Auslösen
+    automatisch wieder.
   domain: automation
-  source_url: https://claude.ai
   input:
-    sonos_speaker:
+    media_player_target:
       name: Sonos Lautsprecher
-      description: Der Lautsprecher, auf dem der Radiosender abgespielt werden soll.
       selector:
         target:
           entity:
             domain: media_player
 
-    stream_url:
-      name: Stream-URL des Radiosenders
-      description: >
-        Die direkte https-Stream-Adresse des Senders, OHNE das
-        "x-rincon-mp3radio://"-Präfix (z. B.
-        https://s6-webradio.antenne.de/antenne/stream/mp3?aw_0_1st.playerid=tunein.com).
-        Zu finden, indem man den Sender einmal über den Medien-Browser
-        abspielt und danach bei Entwicklerwerkzeuge → Zustände →
-        media_player.<dein_lautsprecher> das Attribut "media_content_id"
-        abliest.
+    radio_uri:
+      name: Radio Stream URI
+      description: z.B. x-rincon-mp3radio://<stream-url> für ANTENNE BAYERN
       selector:
         text:
 
-    alarm_time:
-      name: Uhrzeit
-      description: Zu welcher Uhrzeit die Automatisierung starten soll.
-      selector:
-        time:
-
-    weekdays:
-      name: Wochentage
-      description: An welchen Tagen die Automatisierung aktiv sein soll.
-      default: [mon, tue, wed, thu, fri, sat, sun]
-      selector:
-        select:
-          multiple: true
-          options:
-            - label: Montag
-              value: mon
-            - label: Dienstag
-              value: tue
-            - label: Mittwoch
-              value: wed
-            - label: Donnerstag
-              value: thu
-            - label: Freitag
-              value: fri
-            - label: Samstag
-              value: sat
-            - label: Sonntag
-              value: sun
-
-    start_volume:
-      name: Start-Lautstärke (%)
-      default: 10
+    volume_level:
+      name: Lautstärke
+      default: 0.3
       selector:
         number:
           min: 0
-          max: 100
-          unit_of_measurement: "%"
-          mode: slider
+          max: 1
+          step: 0.05
 
-    end_volume:
-      name: Ziel-Lautstärke (%)
-      default: 40
+    schedule_entity:
+      name: Zeitplan (Schedule Helper)
+      description: Unter Einstellungen -> Helfer -> Zeitplan angelegt
       selector:
-        number:
-          min: 0
-          max: 100
-          unit_of_measurement: "%"
-          mode: slider
+        entity:
+          domain: schedule
 
-    fade_duration:
-      name: Dauer der Steigerung (Minuten)
-      default: 10
+    schedule_enabled:
+      name: Schalter "Wochenplan aktiv"
       selector:
-        number:
-          min: 1
-          max: 60
-          unit_of_measurement: min
-          mode: slider
+        entity:
+          domain: input_boolean
 
-    step_interval:
-      name: Schrittintervall (Sekunden)
-      description: >
-        In welchen Abständen die Lautstärke erhöht wird. Kleinere Werte
-        ergeben eine weichere, feinere Steigerung.
-      default: 30
+    override_datetime:
+      name: Einmaliger Wecker (Datum/Uhrzeit)
       selector:
-        number:
-          min: 5
-          max: 120
-          unit_of_measurement: s
-          mode: slider
+        entity:
+          domain: input_datetime
 
-variables:
-  start_volume: !input start_volume
-  end_volume: !input end_volume
-  fade_duration: !input fade_duration
-  step_interval: !input step_interval
-  stream_url: !input stream_url
-  total_steps: "{{ (fade_duration | int * 60 / (step_interval | int)) | round(0, 'ceil') | int }}"
+    override_enabled:
+      name: Schalter "Einmaliger Wecker aktiv"
+      selector:
+        entity:
+          domain: input_boolean
 
 trigger:
+  - platform: state
+    entity_id: !input schedule_entity
+    to: "on"
+    id: schedule
   - platform: time
-    at: !input alarm_time
+    at: !input override_datetime
+    id: override
 
-condition:
-  - condition: time
-    weekday: !input weekdays
+condition: []
 
 action:
-  - service: media_player.media_stop
-    target: !input sonos_speaker
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: schedule
+          - condition: state
+            entity_id: !input schedule_enabled
+            state: "on"
+        sequence:
+          - service: media_player.volume_set
+            target: !input media_player_target
+            data:
+              volume_level: !input volume_level
+          - service: media_player.play_media
+            target: !input media_player_target
+            data:
+              media_content_id: !input radio_uri
+              media_content_type: music
 
-  - delay:
-      seconds: 2
-
-  - service: media_player.volume_set
-    target: !input sonos_speaker
-    data:
-      volume_level: "{{ (start_volume | int) / 100 }}"
-
-  - service: media_player.play_media
-    target: !input sonos_speaker
-    data:
-      media_content_id: "x-rincon-mp3radio://{{ stream_url }}"
-      media_content_type: music
-
-  - repeat:
-      count: "{{ total_steps }}"
-      sequence:
-        - delay:
-            seconds: "{{ step_interval | int }}"
-        - service: media_player.volume_set
-          target: !input sonos_speaker
-          data:
-            volume_level: >
-              {{ [ ((start_volume | int) + ((end_volume | int) - (start_volume | int)) * repeat.index / total_steps) / 100, (end_volume | int) / 100 ] | min }}
+      - conditions:
+          - condition: trigger
+            id: override
+          - condition: state
+            entity_id: !input override_enabled
+            state: "on"
+        sequence:
+          - service: media_player.volume_set
+            target: !input media_player_target
+            data:
+              volume_level: !input volume_level
+          - service: media_player.play_media
+            target: !input media_player_target
+            data:
+              media_content_id: !input radio_uri
+              media_content_type: music
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input override_enabled
 
 mode: single
-max_exceeded: silent
