@@ -1,11 +1,12 @@
 blueprint:
-  name: Sonos Wecker (Zeitplan + Einmalig)
+  name: Sonos Wecker (Zeitplan + Einmalig, sanfte Lautstärkesteigerung)
   description: >
     Spielt einen Radiosender auf einem Sonos-Lautsprecher ab, entweder gesteuert
     über einen Schedule-Helper (wiederkehrender Wochenplan) oder über eine
-    einmalige Uhrzeit. Beide Wege lassen sich separat per Schalter aktivieren/
-    deaktivieren. Der einmalige Wecker deaktiviert sich nach dem Auslösen
-    automatisch wieder.
+    einmalige Uhrzeit. Die Lautstärke steigt dabei schrittweise von einer
+    Start- bis zu einer Maximal-Lautstärke an. Beide Wege lassen sich separat
+    per Schalter aktivieren/deaktivieren. Der einmalige Wecker deaktiviert
+    sich nach dem Auslösen automatisch wieder.
   domain: automation
   input:
     media_player_target:
@@ -17,18 +18,49 @@ blueprint:
 
     radio_uri:
       name: Radio Stream URI
-      description: z.B. x-rincon-mp3radio://<stream-url> für ANTENNE BAYERN
+      description: >
+        Stream-URL des Radiosenders. Wenn leer gelassen, wird ANTENNE BAYERN
+        als Standard verwendet.
+      default: "https://s6-webradio.antenne.de/antenne/stream/mp3?aw_0_1st.playerid=tunein.com"
       selector:
         text:
 
-    volume_level:
-      name: Lautstärke
-      default: 0.3
+    volume_start:
+      name: Start-Lautstärke
+      description: Lautstärke, mit der der Wecker beginnt.
+      default: 0.1
       selector:
         number:
           min: 0
           max: 1
           step: 0.05
+
+    volume_max:
+      name: Maximale Lautstärke
+      description: Lautstärke, bis zu der schrittweise gesteigert wird.
+      default: 0.4
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+
+    volume_ramp_minutes:
+      name: Dauer der Lautstärkesteigerung (Minuten)
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 30
+          unit_of_measurement: min
+
+    volume_steps:
+      name: Anzahl der Lautstärke-Schritte
+      default: 8
+      selector:
+        number:
+          min: 2
+          max: 20
 
     schedule_entity:
       name: Zeitplan (Schedule Helper)
@@ -66,6 +98,12 @@ trigger:
 
 condition: []
 
+variables:
+  vol_start: !input volume_start
+  vol_max: !input volume_max
+  vol_steps: !input volume_steps
+  ramp_minutes: !input volume_ramp_minutes
+
 action:
   - choose:
       - conditions:
@@ -78,12 +116,21 @@ action:
           - service: media_player.volume_set
             target: !input media_player_target
             data:
-              volume_level: !input volume_level
+              volume_level: "{{ vol_start }}"
           - service: media_player.play_media
             target: !input media_player_target
             data:
               media_content_id: !input radio_uri
               media_content_type: music
+          - repeat:
+              count: !input volume_steps
+              sequence:
+                - delay:
+                    seconds: "{{ (ramp_minutes * 60 / vol_steps) | round(0) }}"
+                - service: media_player.volume_set
+                  target: !input media_player_target
+                  data:
+                    volume_level: "{{ (vol_start + (vol_max - vol_start) * repeat.index / vol_steps) | round(2) }}"
 
       - conditions:
           - condition: trigger
@@ -95,12 +142,21 @@ action:
           - service: media_player.volume_set
             target: !input media_player_target
             data:
-              volume_level: !input volume_level
+              volume_level: "{{ vol_start }}"
           - service: media_player.play_media
             target: !input media_player_target
             data:
               media_content_id: !input radio_uri
               media_content_type: music
+          - repeat:
+              count: !input volume_steps
+              sequence:
+                - delay:
+                    seconds: "{{ (ramp_minutes * 60 / vol_steps) | round(0) }}"
+                - service: media_player.volume_set
+                  target: !input media_player_target
+                  data:
+                    volume_level: "{{ (vol_start + (vol_max - vol_start) * repeat.index / vol_steps) | round(2) }}"
           - service: input_boolean.turn_off
             target:
               entity_id: !input override_enabled
