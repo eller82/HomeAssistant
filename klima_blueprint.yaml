@@ -131,6 +131,21 @@ blueprint:
       selector:
         duration: {}
 
+    start_offset:
+      name: Einschalt-Schwelle (° über Zieltemperatur)
+      description: >
+        Wie viele Grad die Raumtemperatur über der Zieltemperatur
+        liegen muss, damit die Automatik überhaupt einschaltet
+        (0 = schaltet schon bei minimaler Überschreitung ein).
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 0.5
+          unit_of_measurement: "°"
+          mode: box
+
     overtemp_offset:
       name: Übertemperatur-Schwelle (°)
       description: >
@@ -189,6 +204,7 @@ variables:
   climate_entity: !input climate_entity
   target_hvac_mode: !input target_hvac_mode
   room_temperature_sensor: !input room_temperature_sensor
+  start_offset: !input start_offset
 
 trigger_variables:
   room_temperature_sensor: !input room_temperature_sensor
@@ -217,12 +233,11 @@ triggers:
     below: !input pv_feedin_threshold
     for: !input off_for
   - id: overtemp_restart
-    trigger: numeric_state
-    entity_id:
-      - !input room_temperature_sensor
-      - !input target_temperature_helper
-    value_template: "{{ states(room_temperature_sensor) | float(0) - states(target_temperature_helper) | float(0) }}"
-    above: "{{ overtemp_offset | float(0) }}"
+    trigger: template
+    value_template: >
+      {{ (states(room_temperature_sensor) | float(0))
+         - (states(target_temperature_helper) | float(0))
+         >= (overtemp_offset | float(0)) }}
     for: !input overtemp_for
 
 conditions: []
@@ -241,9 +256,11 @@ actions:
           - condition: state
             entity_id: !input vacation_mode_helper
             state: "off"
-          - condition: numeric_state
-            entity_id: !input room_temperature_sensor
-            above: !input target_temperature_helper
+          - condition: template
+            value_template: >
+              {{ (states(room_temperature_sensor) | float(0))
+                 - (states(target_temperature_helper) | float(0))
+                 >= (start_offset | float(0)) }}
           - condition: state
             entity_id: !input climate_entity
             state: "off"
