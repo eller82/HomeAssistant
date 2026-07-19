@@ -18,7 +18,6 @@ blueprint:
     Diese Helfer kannst du dann per Dashboard-Karte (z. B. "Entities")
     bedienen, ohne die Automatisierung selbst anfassen zu müssen.
   domain: automation
-  source_url: null
   input:
     climate_entity:
       name: Klimagerät
