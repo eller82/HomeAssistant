@@ -181,6 +181,20 @@ blueprint:
       selector:
         duration: {}
 
+    manual_reset_delay:
+      name: Verzögerung Rücksetzen manueller Schalter
+      description: >
+        Wie lange die Klima durchgehend aus sein muss, bevor der
+        „Manuell an"-Schalter automatisch zurückgesetzt wird. Sollte
+        länger sein als die „Pause beim Neustart", damit ein interner
+        Neustart den manuellen Status nicht versehentlich löscht.
+      default:
+        hours: 0
+        minutes: 0
+        seconds: 20
+      selector:
+        duration: {}
+
     target_hvac_mode:
       name: HVAC-Modus beim Einschalten
       default: auto
@@ -238,6 +252,15 @@ triggers:
          - (states(target_temperature_helper) | float(0))
          >= (overtemp_offset | float(0)) }}
     for: !input overtemp_for
+  - id: climate_turned_on_manually
+    trigger: state
+    entity_id: !input climate_entity
+    from: "off"
+  - id: climate_turned_off
+    trigger: state
+    entity_id: !input climate_entity
+    to: "off"
+    for: !input manual_reset_delay
 
 conditions: []
 
@@ -262,6 +285,9 @@ actions:
             entity_id: !input climate_entity
             state: "off"
         sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: !input status_helper
           - action: climate.set_temperature
             target:
               entity_id: !input climate_entity
@@ -271,9 +297,6 @@ actions:
           - action: climate.turn_on
             target:
               entity_id: !input climate_entity
-          - action: input_boolean.turn_on
-            target:
-              entity_id: !input status_helper
 
       # --- Ausschalten (SOC oder PV unter Schwelle) ---
       - conditions:
@@ -320,5 +343,33 @@ actions:
           - action: climate.turn_on
             target:
               entity_id: !input climate_entity
+
+      # --- Manuelles Einschalten erkannt → Override-Schalter setzen ---
+      - conditions:
+          - condition: trigger
+            id: [climate_turned_on_manually]
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: !input climate_entity
+                state:
+                  - "unavailable"
+                  - "unknown"
+          - condition: state
+            entity_id: !input status_helper
+            state: "off"
+        sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: !input manual_override_helper
+
+      # --- Klima ausgeschaltet → Override-Schalter zurücksetzen ---
+      - conditions:
+          - condition: trigger
+            id: [climate_turned_off]
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: !input manual_override_helper
 
 mode: single
